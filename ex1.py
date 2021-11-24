@@ -1,6 +1,4 @@
 import itertools
-import uuid
-
 import search
 import random
 import copy
@@ -10,7 +8,7 @@ import networkx as nx
 
 import utils
 
-ids = ["311280283", "313535379"]
+ids = ["1",1"]
 
 
 def manhattan(a, b):
