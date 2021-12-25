@@ -1,14 +1,12 @@
 import itertools
 import search
-import random
 import copy
 import json
-import math
 import networkx as nx
 
 import utils
 
-ids = ["1",1"]
+ids = ["311280283", "313535379"]
 
 
 def manhattan(a, b):
@@ -381,13 +379,12 @@ class DroneProblem(search.Problem):
                                 current_turn_drone_name, current_turn_drone_move = drone_name, tuple(
                                     state['drones'][drone_name])
                                 if tuple(drone_loc) == current_turn_drone_move:
-                                    circles += 100
+                                    circles += 10
             else:
                 for act in node.action:
                     if act[0] == 'deliver':
                         return -10
                     elif node.action[0] == 'move':
-                        # implement cycle check for multiple drones
                         # check if we are in a cycle --> penalty of 10
                         parent = node.parent
                         if parent is not None:
@@ -398,11 +395,11 @@ class DroneProblem(search.Problem):
                                 current_turn_drone_move = tuple(state['drones'][current_turn_drone_name])
                                 parent_drone_loc = tuple(parent_state['drones'][current_turn_drone_name])
                                 if parent_drone_loc == current_turn_drone_move:
-                                    circles += 100
+                                    circles += 10
 
         packages_on_board = len(state['packages'].keys())
         packages_on_drones = sum([len(p) for p in state['drones_packages']])
-        distances_manhattan, distances_euclidean, distances_to_clients = 0, 0, 0
+        distances_manhattan, distances_to_clients = 0, 0
 
         if packages_on_drones > 0:
             # dist to client
@@ -410,27 +407,107 @@ class DroneProblem(search.Problem):
                 for package_name in state['drones_packages'][drone_name]:
                     client_name = self._package_name_to_client_name[package_name]
                     path = state['clients'][client_name]['path']
-                    # min_dist_to_client_path = min([manhattan(drone_loc, path[i]) for i in range(len(path))])
+                    # check the distance to the client - in the next turn!
                     client_loc_next_turn = utils.turn_heading(path[0], state['turns'] + 1, path)
                     distances_to_clients += manhattan(tuple(drone_loc), tuple(client_loc_next_turn))
                     # key = (tuple(drone_loc), tuple(client_loc_next_turn))
                     # if key in self._short_distances:
                     #     distances_to_clients += self._short_distances[key]
 
+        # distances to packages
         for drone_loc in state['drones'].values():
             for package_loc in state['packages'].values():
                 # manhattan distances
                 key = (tuple(drone_loc), tuple(package_loc))
                 if key in self._short_distances:
                     distances_manhattan += self._short_distances[key]
-                # distances_euclidean += euclidean(drone_loc, package_loc)
                 if distances_manhattan == 0:
                     # bonus for intersection with client
                     distances_manhattan -= 1
 
-        penalty = distances_manhattan + (packages_on_drones * 3) + (
-                packages_on_board * 8) + distances_to_clients + circles + node.path_cost
+        penalty = distances_manhattan + (packages_on_drones * 3.5) + (
+                packages_on_board * 7.2) + distances_to_clients + circles + node.path_cost
         # print(penalty)
+        return penalty
+
+    def _h1_copy4(self, node):
+        """
+        Best h so far
+        :param node:
+        :return:
+        """
+        state = json.loads(node.state)
+        circles = 0
+        if node.action is not None:
+            if type(node.action[0]) != tuple:
+                # only one drone
+                if node.action[0] == 'deliver':
+                    # deliver is the best choice always!!! we are not stupid
+                    return -10
+                elif node.action[0] == 'move':
+                    # check if we are in a cycle --> penalty of 10
+                    parent = node.parent
+                    if parent is not None:
+                        parent = parent.parent
+                        if parent is not None:
+                            parent_state = json.loads(parent.state)
+                            for drone_name, drone_loc in parent_state['drones'].items():
+                                current_turn_drone_name, current_turn_drone_move = drone_name, tuple(
+                                    state['drones'][drone_name])
+                                if tuple(drone_loc) == current_turn_drone_move:
+                                    circles += 10
+            else:
+                for act in node.action:
+                    if act[0] == 'deliver':
+                        return -10
+                    elif node.action[0] == 'move':
+                        # check if we are in a cycle --> penalty of 10
+                        parent = node.parent
+                        if parent is not None:
+                            parent = parent.parent
+                            if parent is not None:
+                                parent_state = json.loads(parent.state)
+                                current_turn_drone_name = node.action[1]
+                                current_turn_drone_move = tuple(state['drones'][current_turn_drone_name])
+                                parent_drone_loc = tuple(parent_state['drones'][current_turn_drone_name])
+                                if parent_drone_loc == current_turn_drone_move:
+                                    circles += 10
+
+        packages_on_board = len(state['packages'].keys())
+        packages_on_drones = sum([len(p) for p in state['drones_packages']])
+        distances_manhattan, distances_to_clients = 0, 0
+        if packages_on_drones > 0:
+            # dist to client
+            for drone_name, drone_loc in state['drones'].items():
+                if tuple(drone_loc) in state['coordinate_to_packages'] and self.drone_can_pick_up_package(
+                        state['drones_packages'], drone_name):
+                    # there are more packages to pick in this coordinate and the drone is not full
+                    continue
+                for package_name in state['drones_packages'][drone_name]:
+                    client_name = self._package_name_to_client_name[package_name]
+                    path = state['clients'][client_name]['path']
+                    # check the distance to the client - in the next turn!
+                    client_loc_next_turn = utils.turn_heading(path[0], state['turns'] + 1, path)
+                    distances_to_clients += manhattan(tuple(drone_loc), tuple(client_loc_next_turn))
+                    # key = (tuple(drone_loc), tuple(client_loc_next_turn))
+                    # if key in self._short_distances:
+                    #     distances_to_clients += self._short_distances[key]
+
+        # distances to packages
+        for drone_name, drone_loc in state['drones'].items():
+            if not self.drone_can_pick_up_package(state['drones_packages'], drone_name):
+                continue
+            for package_loc in state['packages'].values():
+                # manhattan distances
+                key = (tuple(drone_loc), tuple(package_loc))
+                if key in self._short_distances:
+                    distances_manhattan += self._short_distances[key] * 1.5
+                if distances_manhattan == 0:
+                    # bonus for intersection with client
+                    distances_manhattan -= 1
+
+        penalty = distances_manhattan + (packages_on_drones * 3.5) + (
+                packages_on_board * 7.2) + distances_to_clients + circles + node.path_cost
         return penalty
 
     def _h3(self, node):
