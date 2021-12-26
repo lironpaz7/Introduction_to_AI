@@ -196,17 +196,18 @@ class DroneStochasticProblem:
 def test():
     d = {}
     for i in range(1, len(small_inputs) + 1):
-        score = 0
+        score = []
         for _ in range(1000):
             try:
                 inp = deepcopy(small_inputs[i - 1])
                 my_problem = DroneStochasticProblem(inp)
                 my_problem.run_round()
             except EndOfGame:
-                score += my_problem.score
+                score.append(my_problem.score)
                 continue
-        d[f'game {i}'] = score / 1000
-    print(d)
+        d[f'game {i}'] = f'avg score: {sum(score) / 1000}, min score: {min(score)}, max score: {max(score)}'
+    for k, v in d.items():
+        print(k, v)
 
 
 def main():
@@ -220,4 +221,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    test()

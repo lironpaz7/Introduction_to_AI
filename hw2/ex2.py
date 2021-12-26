@@ -7,9 +7,9 @@ ids = ["311280283", "313535379"]
 import itertools
 import networkx as nx
 
-PACKAGE_ON_DRONE_WEIGHT = 2.4
+PACKAGE_ON_DRONE_WEIGHT = 3.5
 PACKAGE_ON_BOARD_WEIGHT = 7.2
-DISTANCE_TO_CLIENTS_WEIGHT = 1.2
+DISTANCE_TO_CLIENTS_WEIGHT = 1
 
 
 def manhattan(a, b):
@@ -26,11 +26,18 @@ class DroneAgent:
         G = self._build_graph(initial['map'])
         self._short_distances = self._create_shortest_path_distances(G)
         self.initial_turns_to_go = initial['turns to go']
-        self.num_initial_relevant_packages = 0
-        self.relevant_packages = set()
-        for client_name, client_data in initial['clients'].items():
-            self.relevant_packages.update(set(client_data['packages']))
-            self.num_initial_relevant_packages += len(client_data['packages'])
+
+        initial['drones_packages'] = {drone_name: [] for drone_name in initial['drones'].keys()}
+
+        relevant_packages = set()
+        for client in initial['clients'].values():
+            for package in client['packages']:
+                relevant_packages.add(package)
+        # updates packages with relevant packages only
+        for package in set(initial['packages'].keys()).difference(relevant_packages):
+            initial['packages'].pop(package)
+
+        self.num_initial_relevant_packages = len(initial['packages'].keys())
         self.turns_to_deliver_2_packages = []
         self.turns = 0
         self.delivers = 0
@@ -40,18 +47,13 @@ class DroneAgent:
         num_drones = len((state["drones"]))
         return self._strategy(state, actions, num_drones)
 
-    def get_num_packages_on_drones(self, packages):
-        num = 0
-        for v in packages.values():
-            if type(v) != tuple:
-                num += 1
-        return num
+    def get_num_packages_on_drones(self, drones_packages):
+        return sum([len(drones) for drones in drones_packages.values()])
 
     def _strategy(self, state, actions, num_drones):
         rows, cols = len(state['map']), len(state['map'][0])
-        packages_on_board = len(
-            {pack_name for pack_name in state['packages'].keys()}.intersection(self.relevant_packages))
-        packages_on_drones = self.get_num_packages_on_drones(state['packages'])
+        packages_on_drones = self.get_num_packages_on_drones(state['drones_packages'])
+        packages_on_board = len(state['packages']) - packages_on_drones
         if self.delivers >= 2:
             self.turns_to_deliver_2_packages.append(self.turns)
             self.delivers = 0
@@ -77,6 +79,7 @@ class DroneAgent:
             score = 0
             if num_drones == 1:
                 distances_to_packages, distances_to_clients = 0, 0
+                drone_name = action[1]
                 x, y = list(state['drones'].values())[0]
                 if action[0] == 'move':
                     x, y = action[2]
@@ -86,15 +89,14 @@ class DroneAgent:
                     score += 100
                 if packages_on_drones > 0:
                     # distances to client
-                    drone_name = action[1]
-                    for package_name in self.get_drones_packages_list(state['packages'], drone_name):
+                    for package_name in state['drones_packages'][drone_name]:
                         client_name = self.get_client_from_package_name(state['clients'], package_name)
                         # check the distance to the client - in the next turn!
                         prob, loc = state['clients'][client_name]['probabilities'], state['clients'][client_name][
                             'location']
                         client_loc_next_turn = self.geuss_client_loc(prob, loc, rows, cols)
                         distances_to_clients += euclidean((x, y), tuple(client_loc_next_turn))
-                        # key = (tuple(drone_loc), tuple(client_loc_next_turn))
+                        # key = ((x, y), tuple(client_loc_next_turn))
                         # if key in self._short_distances:
                         #     distances_to_clients += self._short_distances[key]
 
@@ -136,7 +138,7 @@ class DroneAgent:
                                             'location']
                             client_loc_next_turn = self.geuss_client_loc(prob, loc, rows, cols)
                             distances_to_clients += euclidean((x, y), tuple(client_loc_next_turn))
-                            # key = (tuple(drone_loc), tuple(client_loc_next_turn))
+                            # key = ((x, y), tuple(client_loc_next_turn))
                             # if key in self._short_distances:
                             #     distances_to_clients += self._short_distances[key]
 
@@ -155,93 +157,25 @@ class DroneAgent:
                             distances_to_clients * DISTANCE_TO_CLIENTS_WEIGHT
                     total_score += score
                 scores_dict[action] = total_score
-                if best_score is None or score > best_score:
-                    best_score, best_action = score, action
+                if best_score is None or total_score > best_score:
+                    best_score, best_action = total_score, action
 
         # print(scores_dict)
         self.turns += 1
         if num_drones == 1:
             if best_action[0] == 'deliver':
+                state['drones_packages'][best_action[1]].remove(best_action[3])
                 self.delivers += 1
+            elif best_action[0] == 'pick up':
+                state['drones_packages'][best_action[1]].append(best_action[2])
             return [best_action]
         for act in best_action:
             if act[0] == 'deliver':
+                state['drones_packages'][act[1]].remove(act[3])
                 self.delivers += 1
+            elif act[0] == 'pick up':
+                state['drones_packages'][act[1]].append(act[2])
         return best_action
-
-    def _h1_copy3(self, node):
-        """
-        Best h so far
-        :param node:
-        :return:
-        """
-        state = json.loads(node.state)
-        circles = 0
-        if node.action is not None:
-            if type(node.action[0]) != tuple:
-                if node.action[0] == 'deliver':
-                    # deliver is the best choice always!!! we are not stupid
-                    return -10
-                elif node.action[0] == 'move':
-                    # check if we are in a cycle --> penalty of 10
-                    parent = node.parent
-                    if parent is not None:
-                        parent = parent.parent
-                        if parent is not None:
-                            parent_state = json.loads(parent.state)
-                            for drone_name, drone_loc in parent_state['drones'].items():
-                                current_turn_drone_name, current_turn_drone_move = drone_name, tuple(
-                                    state['drones'][drone_name])
-                                if tuple(drone_loc) == current_turn_drone_move:
-                                    circles += 10
-            else:
-                for act in node.action:
-                    if act[0] == 'deliver':
-                        return -10
-                    elif node.action[0] == 'move':
-                        # check if we are in a cycle --> penalty of 10
-                        parent = node.parent
-                        if parent is not None:
-                            parent = parent.parent
-                            if parent is not None:
-                                parent_state = json.loads(parent.state)
-                                current_turn_drone_name = node.action[1]
-                                current_turn_drone_move = tuple(state['drones'][current_turn_drone_name])
-                                parent_drone_loc = tuple(parent_state['drones'][current_turn_drone_name])
-                                if parent_drone_loc == current_turn_drone_move:
-                                    circles += 10
-
-        packages_on_board = len(state['packages'].keys())
-        packages_on_drones = sum([len(p) for p in state['drones_packages']])
-        distances_manhattan, distances_to_clients = 0, 0
-
-        if packages_on_drones > 0:
-            # dist to client
-            for drone_name, drone_loc in state['drones'].items():
-                for package_name in state['drones_packages'][drone_name]:
-                    client_name = self.get_client_from_package_name(state['clients'], package_name)
-                    # check the distance to the client - in the next turn!
-                    client_loc_next_turn = self.geuss_client_loc()
-                    distances_to_clients += manhattan(tuple(drone_loc), tuple(client_loc_next_turn))
-                    # key = (tuple(drone_loc), tuple(client_loc_next_turn))
-                    # if key in self._short_distances:
-                    #     distances_to_clients += self._short_distances[key]
-
-        # distances to packages
-        for drone_loc in state['drones'].values():
-            for package_loc in state['packages'].values():
-                # manhattan distances
-                key = (tuple(drone_loc), tuple(package_loc))
-                if key in self._short_distances:
-                    distances_manhattan += self._short_distances[key]
-                if distances_manhattan == 0:
-                    # bonus for intersection with client
-                    distances_manhattan -= 1
-
-        penalty = distances_manhattan + (packages_on_drones * 3.5) + (
-                packages_on_board * 7.2) + distances_to_clients + circles + node.path_cost
-        # print(penalty)
-        return penalty
 
     def geuss_client_loc(self, prob, loc, rows, cols):
         movements = [(-1, 0), (1, 0), (0, -1), (0, 1), (0, 0)]
