@@ -101,14 +101,26 @@ class DroneAgent:
                         #     distances_to_clients += self._short_distances[key]
 
                 # distances to packages
-                for package_loc in state['packages'].values():
-                    # manhattan distances
-                    key = ((x, y), tuple(package_loc))
-                    if key in self._short_distances:
-                        distances_to_packages += self._short_distances[key]
-                        if distances_to_packages == 0:
-                            # bonus for intersection with package
-                            distances_to_packages -= 15
+                # we will punish a drone:
+                # 0 packages on it - 10 points
+                # 1 package on it - 5 points
+                # 2 package on it - 0 points
+                num_packages_on_drone = len(state['drones_packages'][drone_name])
+                if num_packages_on_drone == 0:
+                    score -= 10
+                if num_packages_on_drone == 1:
+                    score -= 5
+                if num_packages_on_drone < 2:
+                    for package_loc in state['packages'].values():
+                        # manhattan distances
+                        key = ((x, y), tuple(package_loc))
+                        if key in self._short_distances:
+                            distances_to_packages += self._short_distances[key]
+                            if distances_to_packages == 0:
+                                # bonus for intersection with package
+                                distances_to_packages -= 15
+                else:
+                    score += 10
 
                 score = score - distances_to_packages - packages_on_drones * PACKAGE_ON_DRONE_WEIGHT - \
                         packages_on_board * PACKAGE_ON_BOARD_WEIGHT - \
@@ -143,14 +155,22 @@ class DroneAgent:
                             #     distances_to_clients += self._short_distances[key]
 
                     # distances to packages
-                    for package_loc in state['packages'].values():
-                        # manhattan distances
-                        key = ((x, y), tuple(package_loc))
-                        if key in self._short_distances:
-                            distances_to_packages += self._short_distances[key]
-                            if distances_to_packages == 0:
-                                # bonus for intersection with package
-                                distances_to_packages -= 15
+                    num_packages_on_drone = len(state['drones_packages'][drone_name])
+                    if num_packages_on_drone == 0:
+                        score -= 10
+                    if num_packages_on_drone == 1:
+                        score -= 5
+                    if num_packages_on_drone < 2:
+                        for package_loc in state['packages'].values():
+                            # manhattan distances
+                            key = ((x, y), tuple(package_loc))
+                            if key in self._short_distances:
+                                distances_to_packages += self._short_distances[key]
+                                if distances_to_packages == 0:
+                                    # bonus for intersection with package
+                                    distances_to_packages -= 15
+                    else:
+                        score += 10
 
                     score = score - distances_to_packages - packages_on_drones * PACKAGE_ON_DRONE_WEIGHT - \
                             packages_on_board * PACKAGE_ON_BOARD_WEIGHT - \
@@ -219,7 +239,7 @@ class DroneAgent:
             if state['map'][x][y] != 'I' and self.is_package_exist(state['packages'], coordinate):
                 # there is a package
                 # check if we can pick it up!!
-                if self.drone_can_pick_up_package(state['packages'], drone_name):
+                if self.drone_can_pick_up_package(state, drone_name):
                     # we can pick it up
                     # extract package name
                     # add action
@@ -267,7 +287,7 @@ class DroneAgent:
                     # add action
                     options.add(('deliver', drone_name, client_name, pack_name))
 
-            # add moves
+            # -------------------------- add moves --------------------------
 
             # move up
             if x - 1 >= 0 and state['map'][x - 1][y] != 'I':
@@ -324,23 +344,9 @@ class DroneAgent:
 
         if len(total_options) == 1:
             return list(total_options[0])
-            # for act in total_options[0]:
-            #     yield act
         else:
             # combinations of options
             return list(itertools.product(*total_options))
-            # for act in total_options:
-            #     yield act
-
-    def create_packages_counter(self, clients):
-        """
-        Creates a dictionary with keys as clients and values as number of wanted packages
-        :return: dictionary
-        """
-        d = {}
-        for client in clients.keys():
-            d[client] = len(clients[client]['packages'])
-        return d
 
     def get_packages_at_coordinate(self, packages, x, y):
         """
@@ -353,6 +359,11 @@ class DroneAgent:
         return [pack_name for pack_name, pack_coordinate in packages.items() if (x, y) == pack_coordinate]
 
     def _build_graph(self, game_map):
+        """
+        Builds the game graph where a node is represented as (x,y) coordinate, and 'I' is not reachable node
+        :param game_map: the map of the game
+        :return: graph representing the game map
+        """
         G = nx.Graph()
         rows, cols = len(game_map), len(game_map[0])
         for i in range(rows):
@@ -382,7 +393,7 @@ class DroneAgent:
 
     def _create_shortest_path_distances(self, G):
         """
-        creates shortest paths dictrionary
+        Creates shortest paths dictrionary
         :param G: graph object
         :return: dictrionary of shortest paths
         """
@@ -395,30 +406,6 @@ class DroneAgent:
                     d[(n1, n2)] = len(nx.shortest_path(G, n1, n2)) - 1
         return d
 
-    def _create_package_name_to_client_name(self, clients):
-        """
-        Creates a dictionary where package_name is a key and client name is value
-        :return: dictionary
-        """
-        res = {}
-        for name, d in clients.items():
-            packages = d['packages']
-            for package in packages:
-                res[package] = name
-        return res
-
-    def _update_map(self, game_map, packages):
-        """
-        Updates the map with the given packages, increment the amount of packages in the specific cell.
-        """
-        for x, y in packages.values():
-            if game_map[x][y] == 'I':
-                continue
-            if game_map[x][y] == 'P':
-                game_map[x][y] = 1
-            else:
-                game_map[x][y] += 1
-
     def get_drones_packages_list(self, packages, drone_name):
         """
         Creates a list of package names that are on a specific drone_name
@@ -428,17 +415,13 @@ class DroneAgent:
         """
         return [pack_name for pack_name, coordinate in packages.items() if coordinate == drone_name]
 
-    def drone_can_pick_up_package(self, packages, drone_name):
+    def drone_can_pick_up_package(self, state, drone_name):
         """
         Checks if the specific drone can pick up another package
         :param drone_name: specific drone
         :return: True if possible, False otherwise
         """
-        num = 0
-        for v in packages.values():
-            if v == drone_name:
-                num += 1
-        return num < 2
+        return len(state['drones_packages'][drone_name]) < 2
 
     def who_can_receive_package(self, clients, package_name, x, y):
         """
@@ -460,8 +443,7 @@ class DroneAgent:
     def get_client_from_package_name(self, clients, package_name):
         """
         Checks if there is a client at position (x,y) that would like to receive 'pack_name'
-        :param x: pos x
-        :param y: pos y
+        :param clients: dictionary of clients
         :param package_name: package name
         :return: client name or None if doesn't exist
         """
