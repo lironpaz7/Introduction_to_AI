@@ -1,7 +1,7 @@
 import random
 
 from ex2 import DroneAgent, ids
-from inputs import small_inputs
+from inputs import small_inputs, small_inputs2, all_inputs
 import logging
 import time
 from copy import deepcopy
@@ -43,6 +43,7 @@ class DroneStochasticProblem:
                 logging.critical(f"You returned an illegal action!")
                 raise RuntimeError
             # print(action)
+            # print(self.state['turns to go'])
             self.result(action)
         self.terminate_execution()
 
@@ -210,9 +211,43 @@ def test():
         print(k, v)
 
 
+def test2():
+    d = {}
+    for i in range(1, len(small_inputs2) + 1):
+        score = []
+        for _ in range(1000):
+            try:
+                inp = deepcopy(small_inputs2[i - 1])
+                my_problem = DroneStochasticProblem(inp)
+                my_problem.run_round()
+            except EndOfGame:
+                score.append(my_problem.score)
+                continue
+        d[f'game {i}'] = f'avg score: {sum(score) / 1000}, min score: {min(score)}, max score: {max(score)}'
+    for k, v in d.items():
+        print(k, v)
+
+
+def grand_test(iters=1000):
+    d = {}
+    for i in range(1, len(all_inputs)):
+        score = []
+        for _ in range(iters):
+            try:
+                inp = deepcopy(all_inputs[i - 1])
+                my_problem = DroneStochasticProblem(inp)
+                my_problem.run_round()
+            except EndOfGame:
+                score.append(my_problem.score)
+                continue
+        d[f'game {i}'] = f'avg score: {sum(score) / iters}, min score: {min(score)}, max score: {max(score)}'
+    for k, v in d.items():
+        print(k, v)
+
+
 def main():
     print(f"IDS: {ids}")
-    for an_input in small_inputs:
+    for an_input in small_inputs2:
         try:
             my_problem = DroneStochasticProblem(an_input)
             my_problem.run_round()
@@ -221,4 +256,4 @@ def main():
 
 
 if __name__ == '__main__':
-    test()
+    main()
