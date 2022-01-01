@@ -77,8 +77,6 @@ class DroneAgent:
                     return 'terminate'
 
         best_action, best_score = None, None
-        scores_dict = {}
-
         for action in actions:
             score = 0
             if num_drones == 1:
@@ -116,14 +114,15 @@ class DroneAgent:
                 if num_packages_on_drone == 1:
                     score -= 5
                 if num_packages_on_drone < 2:
-                    for package_loc in state['packages'].values():
-                        # manhattan distances
-                        key = ((x, y), tuple(package_loc))
-                        if key in self._short_distances:
-                            distances_to_packages += self._short_distances[key]
-                            if distances_to_packages == 0:
-                                # bonus for intersection with package
-                                distances_to_packages -= 30
+                    for pack_name, package_loc in state['packages'].items():
+                        if pack_name not in self.get_all_drones_packages(state):
+                            # manhattan distances
+                            key = ((x, y), tuple(package_loc))
+                            if key in self._short_distances:
+                                distances_to_packages += self._short_distances[key]
+                                if distances_to_packages == 0:
+                                    # bonus for intersection with package
+                                    distances_to_packages -= 30
                 else:
                     score += 10
 
@@ -164,15 +163,16 @@ class DroneAgent:
                     num_packages_on_drone = len(state['drones_packages'][drone_name])
                     pack_factor = 100
                     if num_packages_on_drone < 2:
-                        for package_loc in state['packages'].values():
-                            # manhattan distances
-                            key = ((x, y), tuple(package_loc))
-                            if key in self._short_distances:
-                                distances_to_packages += (
-                                        self._short_distances[key] + pack_factor * (2.5 - num_packages_on_drone))
-                                if distances_to_packages == 0:
-                                    # bonus for intersection with package
-                                    distances_to_packages -= 45
+                        for pack_name, package_loc in state['packages'].items():
+                            if pack_name not in self.get_all_drones_packages(state):
+                                # manhattan distances
+                                key = ((x, y), tuple(package_loc))
+                                if key in self._short_distances:
+                                    distances_to_packages += (
+                                            self._short_distances[key] + pack_factor * (2.5 - num_packages_on_drone))
+                                    if distances_to_packages == 0:
+                                        # bonus for intersection with package
+                                        distances_to_packages -= 45
                     else:
                         score += 10
 
@@ -180,11 +180,9 @@ class DroneAgent:
                             packages_on_board * PACKAGE_ON_BOARD_WEIGHT - \
                             distances_to_clients * DISTANCE_TO_CLIENTS_WEIGHT
                     total_score += score
-                scores_dict[action] = total_score
                 if best_score is None or total_score > best_score:
                     best_score, best_action = total_score, action
 
-        # print(scores_dict)
         self.turns += 1
         if num_drones == 1:
             if best_action[0] == 'deliver':
@@ -229,9 +227,9 @@ class DroneAgent:
     def find_best_move2(self, drone_name, state, rows, cols):
         x, y = state['drones'][drone_name]
         num_packages_on_drone = state['drones_packages'][drone_name]
-        movements = [(-1, 0), (1, 0), (0, -1), (0, 1), (0, 0)]
+        movements = [(-1, 0), (1, 0), (0, -1), (0, 1), (0, 0), (-1, -1), (-1, 1), (1, 1), (1, -1)]
+        plan_b = []
         if len(num_packages_on_drone) > 0:
-            plan_b = []
             for package_name in num_packages_on_drone:
                 client_name = self.get_client_from_package_name(state['clients'], package_name)
                 # check the distance to the client - in the next turn!
@@ -242,7 +240,7 @@ class DroneAgent:
                 key = (x, y), tuple(client_loc_next_turn)
                 if key in self._short_distances_paths:
                     if not self._short_distances_paths[key]:
-                        return 'wait', drone_name
+                        return None
                     return 'move', drone_name, self._short_distances_paths[key][0]
                 best_loc, best_dist = None, None
                 for i, j in movements:
@@ -256,24 +254,54 @@ class DroneAgent:
             if len(num_packages_on_drone) == 2:
                 return 'move', drone_name, min(plan_b, key=lambda a: a[1])[0]
 
+        if len(num_packages_on_drone) == 1:
+            # finds the minimum between best euclidean distance to client and best shortest path to package
+            next_loc_to_pack, dist = None, None
+            for pack_name, package_loc in state['packages'].items():
+                if pack_name not in self.get_all_drones_packages(state):
+                    key = ((x, y), tuple(package_loc))
+                    if key in self._short_distances:
+                        d = self._short_distances[key]
+                        if d == 0:
+                            # we should pick up!
+                            return None
+                        if dist is None or d < dist:
+                            next_loc_to_pack, dist = self._short_distances_paths[key][0], d
+            best_plan_b = min(plan_b, key=lambda a: a[1])
+            if next_loc_to_pack is not None:
+                best_move = min(best_plan_b, (next_loc_to_pack, dist), key=lambda z: z[1])[0]
+                return 'move', drone_name, best_move
+            else:
+                if best_plan_b is not None:
+                    return 'move', drone_name, best_plan_b[0]
+                return None
+
         # dist to packages:
-        if len(num_packages_on_drone) < 2:
-            closest_pack, dist = None, None
-            for package_loc in state['packages'].values():
-                key = ((x, y), tuple(package_loc))
-                if key in self._short_distances:
-                    d = self._short_distances[key]
-                    if d == 0:
-                        return 'wait', drone_name
-                    if dist is None or d < dist:
-                        closest_pack, dist = self._short_distances_paths[key][0], d
-            if closest_pack is not None:
-                return 'move', drone_name, closest_pack
+        if len(num_packages_on_drone) == 0:
+            # drone has 0 packages
+            next_loc_to_pack, dist = None, None
+            for pack_name, package_loc in state['packages'].items():
+                if pack_name not in self.get_all_drones_packages(state):
+                    key = ((x, y), tuple(package_loc))
+                    if key in self._short_distances:
+                        d = self._short_distances[key]
+                        if d == 0:
+                            return None
+                        if dist is None or d < dist:
+                            next_loc_to_pack, dist = self._short_distances_paths[key][0], d
+            if next_loc_to_pack is not None:
+                return 'move', drone_name, next_loc_to_pack
             else:
                 for i, j in movements:
                     if 0 <= x + i < rows and 0 <= y + j < cols and state['map'][x + i][y + j] != 'I':
                         next_loc = x + i, y + j
                         return 'move', drone_name, next_loc
+
+    def get_all_drones_packages(self, state):
+        res = set()
+        for drone_pack_lst in state['drones_packages'].values():
+            res.update(set(drone_pack_lst))
+        return res
 
     def find_best_move(self, moves, state, rows, cols):
         best_move, best_score = None, None
@@ -434,7 +462,11 @@ class DroneAgent:
             # moves.add(('wait', drone_name))
 
             best_move = self.find_best_move2(drone_name, state, rows, cols)
-            options.add(best_move)
+            if best_move is not None:
+                options.add(best_move)
+            else:
+                if len(options) == 0:
+                    options.add(('wait', drone_name))
 
             total_options.append(options)
             num_drones += 1

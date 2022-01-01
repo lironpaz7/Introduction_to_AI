@@ -228,9 +228,9 @@ def test2():
         print(k, v)
 
 
-def grand_test(iters=1000):
+def full_test(iters=1000):
     d = {}
-    for i in range(1, len(all_inputs)):
+    for i in range(1, len(all_inputs) + 1):
         score = []
         for _ in range(iters):
             try:
@@ -247,7 +247,7 @@ def grand_test(iters=1000):
 
 def main():
     print(f"IDS: {ids}")
-    for an_input in small_inputs2:
+    for an_input in all_inputs:
         try:
             my_problem = DroneStochasticProblem(an_input)
             my_problem.run_round()
@@ -256,4 +256,14 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    full_test()
+    # main()
+    # d = {}
+    # d[f'game 1'] = f'avg score: 50.21, min score: 35, max score: 70'
+    # d[f'game 2'] = f'avg score: 53.68, min score: 40, max score: 75'
+    # d[f'game 3'] = f'avg score: 56.36, min score: 35, max score: 80'
+    # d[f'game 4'] = f'avg score: 356.21, min score: 270, max score: 435'
+    # d[f'game 5'] = f'avg score: 1325.42, min score: 840, max score: 1670'
+    #
+    # for k, v in d.items():
+    #     print(k, v)
