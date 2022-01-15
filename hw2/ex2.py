@@ -43,14 +43,18 @@ class DroneAgent:
         self.turns_to_deliver_2_packages = []
         self.turns = 0
         self.delivers = 0
+        self.lock = False
 
     def act(self, state):
         actions = self.drones_action_builder(state)
+        # print(actions)
+        # print(state['clients']['Alice']['location'])
         num_drones = len((state["drones"]))
         best_action = self._strategy(state, actions, num_drones)
         if best_action == 'reset':
             self.delivers = 0
             self.turns = 0
+            self.lock = False
         return best_action
 
     def get_num_packages_on_drones(self, drones_packages):
@@ -60,8 +64,9 @@ class DroneAgent:
         rows, cols = self.rows, self.cols
         packages_on_drones = self.get_num_packages_on_drones(state['drones_packages'])
         packages_on_board = len(state['packages']) - packages_on_drones
-        if self.delivers >= 2:
+        if self.delivers >= 2 and not self.lock:
             self.turns_to_deliver_2_packages.append(self.turns)
+            self.lock = True
 
         if packages_on_board == 0 and packages_on_drones == 0:
             if self.num_initial_relevant_packages < 2:
@@ -72,6 +77,7 @@ class DroneAgent:
                 average_turns_to_2_deliver = sum(self.turns_to_deliver_2_packages) / len(
                     self.turns_to_deliver_2_packages)
                 if state['turns to go'] >= average_turns_to_2_deliver:
+                    self.turns += 1
                     return 'reset'
                 else:
                     return 'terminate'
@@ -89,46 +95,41 @@ class DroneAgent:
                     score += 1000
                 if action[0] == 'pick up':
                     score += 100
-                if packages_on_drones > 0:
-                    # distances to client
-                    for package_name in state['drones_packages'][drone_name]:
-                        client_name = self.get_client_from_package_name(state['clients'], package_name)
-                        # check the distance to the client - in the next turn!
-                        prob, loc = state['clients'][client_name]['probabilities'], state['clients'][client_name][
-                            'location']
-                        client_loc_next_turn = self.guess_client_loc(prob, loc, rows, cols)
-                        key = ((x, y), tuple(client_loc_next_turn))
-                        if key in self._short_distances:
-                            distances_to_clients += self._short_distances[key]
-                        else:
-                            distances_to_clients += euclidean((x, y), tuple(client_loc_next_turn))
+                # if packages_on_drones > 0:
+                #     # distances to client
+                #     for package_name in state['drones_packages'][drone_name]:
+                #         client_name = self.get_client_from_package_name(state['clients'], package_name)
+                #         # check the distance to the client - in the next turn!
+                #         prob, loc = state['clients'][client_name]['probabilities'], state['clients'][client_name][
+                #             'location']
+                #         client_loc_next_turn = self.guess_client_loc(prob, loc, rows, cols)
+                #         key = ((x, y), tuple(client_loc_next_turn))
+                #         if key in self._short_distances:
+                #             distances_to_clients += self._short_distances[key]
+                #         else:
+                #             distances_to_clients += euclidean((x, y), tuple(client_loc_next_turn))
+                #
+                # # distances to packages
+                # num_packages_on_drone = len(state['drones_packages'][drone_name])
+                # if num_packages_on_drone < 2:
+                #     for pack_name, package_loc in state['packages'].items():
+                #         if pack_name not in self.get_all_drones_packages(state):
+                #             # manhattan distances
+                #             key = ((x, y), tuple(package_loc))
+                #             if key in self._short_distances:
+                #                 distances_to_packages += self._short_distances[key]
+                #                 if distances_to_packages == 0:
+                #                     # bonus for intersection with package
+                #                     distances_to_packages -= 100
+                # else:
+                #     score += 10
 
-                # distances to packages
-                # we will punish a drone:
-                # 0 packages on it - 10 points
-                # 1 package on it - 5 points
-                # 2 package on it - 0 points
-                num_packages_on_drone = len(state['drones_packages'][drone_name])
-                if num_packages_on_drone == 0:
-                    score -= 10
-                if num_packages_on_drone == 1:
-                    score -= 5
-                if num_packages_on_drone < 2:
-                    for pack_name, package_loc in state['packages'].items():
-                        if pack_name not in self.get_all_drones_packages(state):
-                            # manhattan distances
-                            key = ((x, y), tuple(package_loc))
-                            if key in self._short_distances:
-                                distances_to_packages += self._short_distances[key]
-                                if distances_to_packages == 0:
-                                    # bonus for intersection with package
-                                    distances_to_packages -= 30
-                else:
-                    score += 10
+                score = score - packages_on_drones * PACKAGE_ON_DRONE_WEIGHT - \
+                        packages_on_board * PACKAGE_ON_BOARD_WEIGHT
 
-                score = score - distances_to_packages - packages_on_drones * PACKAGE_ON_DRONE_WEIGHT - \
-                        packages_on_board * PACKAGE_ON_BOARD_WEIGHT - \
-                        distances_to_clients * DISTANCE_TO_CLIENTS_WEIGHT
+                # score = score - distances_to_packages - packages_on_drones * PACKAGE_ON_DRONE_WEIGHT - \
+                #         packages_on_board * PACKAGE_ON_BOARD_WEIGHT - \
+                #         distances_to_clients * DISTANCE_TO_CLIENTS_WEIGHT
                 if best_score is None or score > best_score:
                     best_score, best_action = score, action
             else:
@@ -143,42 +144,44 @@ class DroneAgent:
                         score += 1000
                     if act[0] == 'pick up':
                         score += 100
-                    num_packages_on_drone = state['drones_packages'][drone_name]
-                    if len(num_packages_on_drone) > 0:
-                        # distances to client
-                        for package_name in num_packages_on_drone:
-                            client_name = self.get_client_from_package_name(state['clients'], package_name)
-                            # check the distance to the client - in the next turn!
-                            prob, loc = state['clients'][client_name]['probabilities'], \
-                                        state['clients'][client_name][
-                                            'location']
-                            client_loc_next_turn = self.guess_client_loc(prob, loc, rows, cols)
-                            key = ((x, y), tuple(client_loc_next_turn))
-                            if key in self._short_distances:
-                                distances_to_clients += self._short_distances[key]
-                            else:
-                                distances_to_clients += euclidean((x, y), tuple(client_loc_next_turn))
+                    # num_packages_on_drone = state['drones_packages'][drone_name]
+                    # if len(num_packages_on_drone) > 0:
+                    #     # distances to client
+                    #     for package_name in num_packages_on_drone:
+                    #         client_name = self.get_client_from_package_name(state['clients'], package_name)
+                    #         # check the distance to the client - in the next turn!
+                    #         prob, loc = state['clients'][client_name]['probabilities'], \
+                    #                     state['clients'][client_name][
+                    #                         'location']
+                    #         client_loc_next_turn = self.guess_client_loc(prob, loc, rows, cols)
+                    #         key = ((x, y), tuple(client_loc_next_turn))
+                    #         if key in self._short_distances:
+                    #             distances_to_clients += self._short_distances[key]
+                    #         else:
+                    #             distances_to_clients += euclidean((x, y), tuple(client_loc_next_turn))
+                    #
+                    # # distances to packages
+                    # num_packages_on_drone = len(state['drones_packages'][drone_name])
+                    # pack_factor = 100
+                    # if num_packages_on_drone < 2:
+                    #     for pack_name, package_loc in state['packages'].items():
+                    #         if pack_name not in self.get_all_drones_packages(state):
+                    #             # manhattan distances
+                    #             key = ((x, y), tuple(package_loc))
+                    #             if key in self._short_distances:
+                    #                 distances_to_packages += (
+                    #                         self._short_distances[key] + pack_factor * (2.5 - num_packages_on_drone))
+                    #                 if distances_to_packages == 0:
+                    #                     # bonus for intersection with package
+                    #                     distances_to_packages -= 45
+                    # else:
+                    #     score += 10
 
-                    # distances to packages
-                    num_packages_on_drone = len(state['drones_packages'][drone_name])
-                    pack_factor = 100
-                    if num_packages_on_drone < 2:
-                        for pack_name, package_loc in state['packages'].items():
-                            if pack_name not in self.get_all_drones_packages(state):
-                                # manhattan distances
-                                key = ((x, y), tuple(package_loc))
-                                if key in self._short_distances:
-                                    distances_to_packages += (
-                                            self._short_distances[key] + pack_factor * (2.5 - num_packages_on_drone))
-                                    if distances_to_packages == 0:
-                                        # bonus for intersection with package
-                                        distances_to_packages -= 45
-                    else:
-                        score += 10
-
-                    score = score - distances_to_packages - packages_on_drones * PACKAGE_ON_DRONE_WEIGHT - \
-                            packages_on_board * PACKAGE_ON_BOARD_WEIGHT - \
-                            distances_to_clients * DISTANCE_TO_CLIENTS_WEIGHT
+                    score = score - packages_on_drones * PACKAGE_ON_DRONE_WEIGHT - \
+                            packages_on_board * PACKAGE_ON_BOARD_WEIGHT
+                    # score = score - distances_to_packages - packages_on_drones * PACKAGE_ON_DRONE_WEIGHT - \
+                    #         packages_on_board * PACKAGE_ON_BOARD_WEIGHT - \
+                    #         distances_to_clients * DISTANCE_TO_CLIENTS_WEIGHT
                     total_score += score
                 if best_score is None or total_score > best_score:
                     best_score, best_action = total_score, action
@@ -529,13 +532,13 @@ class DroneAgent:
         paths_len, paths = {}, {}
         for n1 in G.nodes:
             for n2 in G.nodes:
-                if n1 == n2:
-                    paths[(n1, n2)] = []
-                    paths_len[(n1, n2)] = 0
-                else:
+                if n1 != n2:
                     path = nx.shortest_path(G, n1, n2)[1:]
                     paths[(n1, n2)] = path
                     paths_len[(n1, n2)] = len(path)
+                else:
+                    paths[(n1, n2)] = []
+                    paths_len[(n1, n2)] = 0
         return paths_len, paths
 
     def get_drones_packages_list(self, drones_packages, drone_name):

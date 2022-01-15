@@ -230,7 +230,7 @@ def test2():
 
 def full_test(iters=1000):
     d = {}
-    for i in range(1, len(all_inputs) + 1):
+    for i in range(1, len(all_inputs)):
         score = []
         for _ in range(iters):
             try:
@@ -257,7 +257,7 @@ def main():
 
 if __name__ == '__main__':
     full_test()
-    # main()
+    # full_test()
     # d = {}
     # d[f'game 1'] = f'avg score: 50.21, min score: 35, max score: 70'
     # d[f'game 2'] = f'avg score: 53.68, min score: 40, max score: 75'
