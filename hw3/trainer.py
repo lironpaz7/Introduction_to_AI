@@ -26,12 +26,13 @@ class DroneTrainer:
             if done:
                 logging.debug(f'INFO: episode {episodes_counter} start', end='')
             action = self.drone.select_action(obs0)  # decide on next action
-            # print(action)
+            # print(f'true steps: {steps_counter}, true episodes: {episodes_counter}')
             obs1, reward, done = self.env.step(action)
             self.drone.update(obs0, action, obs1, reward)
             obs0 = obs1
             reward_list.append(reward)
             steps_counter += 1
+            # print(episodes_counter)
             done = done or steps_counter >= MAXIMUM_STEPS_PER_EPISODE
             if done:
                 logging.debug(f', reward: {sum(reward_list)}')
