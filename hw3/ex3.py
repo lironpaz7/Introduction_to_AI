@@ -49,7 +49,7 @@ class DroneAgent:
 
 
 class QLearning:
-    def __init__(self, actions, n, m, epsilon=0.9, alpha=0.3, gamma=0.7):
+    def __init__(self, actions, n, m, epsilon=0.9, alpha=0.32, gamma=0.85):
         self.q = {}
         self.n = n
         self.m = m
@@ -68,7 +68,7 @@ class QLearning:
         elif action_space == 'pick':
             return 'pick'
         state = json.dumps(state)
-        if mode == 'train':
+        if mode == 'train' and random.random() < self.epsilon:
             for action in action_space:
                 if (state, action) not in self.q:
                     return action
