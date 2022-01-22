@@ -6,10 +6,22 @@ ids = ["311280283", "313535379"]
 
 
 def euclidean(a, b):
+    """
+    Calculates euclidean distance between two points a(x1,y1) and b(x2,y2)
+    :param a: (x1,y1)
+    :param b: (x2,y2)
+    :return: euclidean distance
+    """
     return sum([(x - y) ** 2 for x, y in zip(a, b)]) ** 0.5
 
 
 def manhattan(a, b):
+    """
+    Calculates manhattan distance between two points a(x1,y1) and b(x2,y2)
+    :param a: (x1,y1)
+    :param b: (x2,y2)
+    :return: manhattan distance
+    """
     return sum(abs(val1 - val2) for val1, val2 in zip(a, b))
 
 
@@ -25,6 +37,12 @@ class DroneAgent:
         return self.select_best_action(obs0)
 
     def select_best_action(self, obs0):
+        """
+        Selects the best action possible, if there are no more package to deliver so we return 'reset', else we call
+        the choose_action method of our q_learner
+        :param obs0: state
+        :return: best action possible
+        """
         if not obs0['packages']:
             return 'reset'
         for k, v in obs0.items():
@@ -39,6 +57,13 @@ class DroneAgent:
         self.mode = 'eval'  # do not change this!
 
     def update(self, obs0, action, obs1, reward):
+        """
+        Updates our q_learner q values
+        :param obs0: previous state
+        :param action: action
+        :param obs1: current state
+        :param reward: reward given by applying action on previous state which led to current state
+        """
         for k, v in obs0.items():
             if type(v) == set:
                 obs0[k] = list(v)
@@ -62,6 +87,14 @@ class QLearning:
         return self.q.get((state, action), 0)
 
     def choose_action(self, state, mode):
+        """
+        Chooses the best action possible. If we can deliver or pick we will do so. Otherwise, if mode is train then
+        randomly pick any feasible action from action space with probability of self.epsilon (0.9). Else find the best
+        action with respect to q value (action which maximize q value)
+        :param state: current state
+        :param mode: train/eval
+        :return: best action
+        """
         action_space = self.drone_action_builder(state)
         if action_space == 'deliver':
             return 'deliver'
@@ -91,7 +124,8 @@ class QLearning:
         """
         Builds all possible actions from a given state
         :param state: game state
-        :return: a list of possible actions where each action is represented by a tuple
+        :return: if the drone can deliver or pick then 'deliver' / 'pick' is returned as a string.
+        otherwise a list of possible actions is returned where each action is represented by a string
         """
 
         action_space = []
@@ -151,10 +185,3 @@ class QLearning:
             self.q[(state1, action1)] = reward
         else:
             self.q[(state1, action1)] = old_q + self.alpha * (reward + self.gamma * q_max - old_q)
-
-    def get_closest_package(self, x, y, packages):
-        res = []
-        for pack_loc in packages.values():
-            dist = manhattan((x, y), pack_loc)
-            res.append(dist)
-        return min(res)
