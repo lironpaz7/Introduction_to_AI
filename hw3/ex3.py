@@ -2,7 +2,7 @@ import math
 import random
 import json
 
-ids = ["311280283", "313535379"]
+ids = ["1", "1"]
 
 
 def euclidean(a, b):
