@@ -3,7 +3,7 @@ import time
 
 from hw2 import utils
 
-ids = ["311280283", "313535379"]
+ids = ["1", "1"]
 import itertools
 import networkx as nx
 
